@@ -1,11 +1,11 @@
 # React Frontend — example.com
 
-React 18 + Vite single-page app, hosted as static files on **S3 + CloudFront** at `https://example.com`.
-It calls the PHP API at `https://api.example.com/api` (separate repository).
+React 18 + Vite single-page app. Hosted as static files by nginx on the **same EC2 instance as the API**
+(`https://example.com`), calling the PHP API at `https://api.example.com/api` (backend repository).
 
 ```
-Browser ──► https://example.com      CloudFront → S3 (private bucket)   ← this repo
-   └──────► https://api.example.com  nginx → PHP API in Docker          ← backend repo
+Browser ──► https://example.com      nginx → /var/www/example.com/current   ← this repo's build
+   └──────► https://api.example.com  nginx → PHP API in Docker              ← backend repo
 ```
 
 ## Structure
@@ -14,70 +14,47 @@ Browser ──► https://example.com      CloudFront → S3 (private bucket)   
 .
 ├── src/
 │   ├── api.js                   # API client: timeouts, retries, idempotency keys, circuit breaker
-│   ├── App.jsx
+│   ├── App.jsx                  # Navbar, hero, features, item manager, footer
 │   ├── hooks/useConnection.js   # Reconnects automatically when the API comes back
 │   └── components/
 ├── .env.production              # VITE_API_BASE_URL=https://api.example.com/api  (baked in at build)
 ├── .env.example                 # Local dev settings
-├── vite.config.js
 ├── deploy/
-│   ├── deploy.ps1               # Build + upload to S3 + invalidate CloudFront (PowerShell)
-│   └── deploy.sh                # Same, for bash
-└── infra/frontend-stack.yaml    # CloudFormation: S3, CloudFront, TLS certificate, Route 53 DNS, API health alarm
+│   ├── deploy-server.ps1        # Build + upload to the EC2 server over SSH (PowerShell)  ← default
+│   ├── deploy-server.sh         # Same, bash
+│   ├── deploy-s3.ps1 / .sh      # Alternative: S3 + CloudFront hosting
+└── infra/frontend-stack.yaml    # Alternative: CloudFormation for S3 + CloudFront hosting
 ```
 
-## Hosting (AWS)
+## Deploying to the EC2 server
 
-**Before you start**
-- AWS CLI v2 installed and logged in (`aws sts get-caller-identity` works).
-- Your domain's DNS is managed by **Route 53** (a hosted zone for `example.com`). Note its **Hosted Zone ID**.
-- The backend server's **public IP** (the template also creates the `api.example.com` DNS record).
+**Prerequisites:** the backend repo's `setup-nginx.sh` has been run on the server (it creates
+`/var/www/example.com` and the nginx site), and you have the instance's SSH key.
 
-**1. Set the API URL**
+1. Set the API URL in `.env.production`:
+   ```
+   VITE_API_BASE_URL=https://api.example.com/api
+   ```
+2. Deploy:
+   ```powershell
+   .\deploy\deploy-server.ps1 -Server ubuntu@<ELASTIC_IP> -Domain example.com -KeyFile C:\path\my-key.pem
+   ```
+   ```bash
+   ./deploy/deploy-server.sh ubuntu@<ELASTIC_IP> example.com path/my-key.pem
+   ```
+   The script builds, uploads to `/var/www/example.com/releases/<timestamp>`, then switches the
+   `current` symlink atomically. The last 5 releases are kept.
+3. Open `https://example.com`. The badge should show **API online**.
 
-Edit `.env.production`:
-```
-VITE_API_BASE_URL=https://api.example.com/api
-```
+**Rollback** (on the server): `ln -sfn /var/www/example.com/releases/<older> /var/www/example.com/current`
 
-**2. Create the hosting (one time)**
+**If the badge says "API offline":** open the browser console (F12). A CORS error means the backend's
+`CORS_ALLOWED_ORIGINS` doesn't contain `https://example.com` exactly.
 
-Must be deployed in **us-east-1** — CloudFront requires its certificate there.
-```bash
-aws cloudformation deploy --region us-east-1 \
-  --stack-name example-frontend \
-  --template-file infra/frontend-stack.yaml \
-  --parameter-overrides \
-      DomainName=example.com \
-      HostedZoneId=Z0123456789ABCDEFGHIJ \
-      ApiServerIp=203.0.113.10 \
-      AlertEmail=you@example.com
-```
-Creates: private S3 bucket, CloudFront distribution with HTTPS + security headers, certificate for
-`example.com` + `www.example.com`, DNS records for `example.com`, `www` and `api.example.com`,
-and a health check that emails you if the API goes down. Takes 5–15 minutes the first time.
-Confirm the subscription email from AWS when it arrives.
+## Alternative: S3 + CloudFront
 
-**3. Deploy the app**
-```powershell
-.\deploy\deploy.ps1 -StackName example-frontend        # PowerShell
-```
-```bash
-STACK_NAME=example-frontend ./deploy/deploy.sh         # bash
-```
-The script builds, uploads hashed assets with a 1-year cache, uploads `index.html` last with
-`no-cache`, and invalidates CloudFront, so the new version is visible immediately.
-
-**4. Verify**
-
-Open `https://example.com`. The badge should say **API online** and the item list should load from the API.
-If it says offline, check the browser console: a CORS error means `CORS_ALLOWED_ORIGINS` on the backend
-does not include `https://example.com` exactly.
-
-## Updating the frontend
-
-Change code → commit → run the deploy script again (step 3).
-Rollback: restore the previous `index.html` version in S3 (versioning is on) and invalidate `/index.html`.
+If you later want a global CDN instead of the single server, deploy `infra/frontend-stack.yaml`
+in `us-east-1` and use `deploy/deploy-s3.ps1 -StackName <stack>`.
 
 ## Local development
 
