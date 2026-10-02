@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from './api.js'
 import { useConnection } from './hooks/useConnection.js'
 import ConnectionBanner from './components/ConnectionBanner.jsx'
-import ItemForm from './components/ItemForm.jsx'
-import ItemList from './components/ItemList.jsx'
-import StatusBadge from './components/StatusBadge.jsx'
+import Navbar from './components/Navbar.jsx'
+import Hero from './components/Hero.jsx'
+import Features from './components/Features.jsx'
+import ItemsSection from './components/ItemsSection.jsx'
+import Footer from './components/Footer.jsx'
 
 export default function App() {
   const [items, setItems] = useState([])
@@ -12,6 +14,7 @@ export default function App() {
   const [error, setError] = useState('')
 
   const loadItems = useCallback(async () => {
+    setLoading(true)
     setError('')
     try {
       const { data } = await api.listItems()
@@ -33,6 +36,7 @@ export default function App() {
   const handleCreate = async (name) => {
     const { data } = await api.createItem(name)
     setItems((prev) => [...prev, data])
+    setError('')
   }
 
   const handleDelete = async (id) => {
@@ -47,22 +51,20 @@ export default function App() {
   return (
     <>
       <ConnectionBanner online={connection.online} degraded={connection.degraded} />
-      <main className="container">
-        <header className="header">
-          <h1>Items</h1>
-          <StatusBadge up={loading ? null : !connection.degraded} />
-        </header>
-
-        <ItemForm onSubmit={handleCreate} />
-
-        {error && (
-          <p className="error" role="alert">
-            {error} <button className="link" onClick={loadItems}>Retry</button>
-          </p>
-        )}
-
-        {loading ? <p className="muted">Loading…</p> : <ItemList items={items} onDelete={handleDelete} />}
+      <Navbar apiUp={loading && !error ? null : !connection.degraded && !error} />
+      <main>
+        <Hero />
+        <Features />
+        <ItemsSection
+          items={items}
+          loading={loading}
+          error={error}
+          onCreate={handleCreate}
+          onDelete={handleDelete}
+          onRetry={loadItems}
+        />
       </main>
+      <Footer />
     </>
   )
 }

@@ -22,21 +22,22 @@ export default function ItemForm({ onSubmit }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="form">
-      <div className="row">
+    <form onSubmit={handleSubmit}>
+      <div className="form-row">
         <input
+          className="input"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="New item name"
+          placeholder="What do you want to add?"
           maxLength={255}
           aria-label="Item name"
           disabled={submitting}
         />
-        <button type="submit" disabled={submitting || !name.trim()}>
-          {submitting ? 'Adding…' : 'Add'}
+        <button type="submit" className="btn btn-primary" disabled={submitting || !name.trim()}>
+          {submitting ? 'Adding…' : '+ Add item'}
         </button>
       </div>
-      {error && <p className="error">{error}</p>}
+      {error && <p className="field-error">{error}</p>}
     </form>
   )
 }
